@@ -23,6 +23,8 @@ async function startServer() {
   } | null = null;
 
   const PROJECT_SOURCE_FILES = [
+    "README.md",
+    "LICENSE",
     "package.json",
     "tsconfig.json",
     "vite.config.ts",
@@ -35,6 +37,7 @@ async function startServer() {
     "src/index.css",
     "src/App.tsx",
     "src/data/auraData.ts",
+    "src/components/AuraLandingView.tsx",
     "src/components/AuraShellView.tsx",
     "src/components/AuraFsView.tsx",
     "src/components/AuraPkgView.tsx",
@@ -87,6 +90,128 @@ async function startServer() {
 
     const authUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
     res.json({ url: authUrl, configured: true, redirectUri });
+  });
+
+  // 1b. GitHub OAuth Device Flow (Zero Callback URL required — user enters 8-digit code at github.com/login/device)
+  app.post("/api/auth/github/device/start", async (req, res) => {
+    const clientId =
+      req.body?.clientId?.trim() ||
+      process.env.GITHUB_CLIENT_ID ||
+      process.env.CLIENT_ID ||
+      "";
+
+    if (!clientId) {
+      return res.status(400).json({
+        error: "Please provide your GitHub OAuth App Client ID (or set GITHUB_CLIENT_ID in Secrets).",
+      });
+    }
+
+    try {
+      const deviceRes = await fetch("https://github.com/login/device/code", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          scope: "repo read:user",
+        }),
+      });
+
+      const deviceData: any = await deviceRes.json();
+      if (!deviceRes.ok || !deviceData.device_code) {
+        throw new Error(
+          deviceData.error_description ||
+            deviceData.error ||
+            "Failed to initiate GitHub Device Flow. Ensure 'Enable Device Flow' is checked in your GitHub OAuth App settings."
+        );
+      }
+
+      res.json({
+        clientId,
+        device_code: deviceData.device_code,
+        user_code: deviceData.user_code,
+        verification_uri: deviceData.verification_uri || "https://github.com/login/device",
+        expires_in: deviceData.expires_in,
+        interval: deviceData.interval || 5,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to start GitHub Device Flow" });
+    }
+  });
+
+  app.post("/api/auth/github/device/poll", async (req, res) => {
+    const { device_code, clientId: bodyClientId } = req.body || {};
+    const clientId =
+      bodyClientId?.trim() ||
+      process.env.GITHUB_CLIENT_ID ||
+      process.env.CLIENT_ID ||
+      "";
+
+    if (!device_code || !clientId) {
+      return res.status(400).json({ error: "Missing device_code or clientId" });
+    }
+
+    try {
+      const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          device_code,
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        }),
+      });
+
+      const tokenData: any = await tokenRes.json();
+      if (tokenData.error) {
+        // 'authorization_pending' or 'slow_down' are normal while waiting for user
+        return res.json({
+          pending: tokenData.error === "authorization_pending" || tokenData.error === "slow_down",
+          error: tokenData.error,
+          error_description: tokenData.error_description,
+        });
+      }
+
+      if (!tokenData.access_token) {
+        return res.status(400).json({ error: "No access_token returned from GitHub" });
+      }
+
+      const userRes = await fetch("https://api.github.com/user", {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "AuraOS-GitHub-Connector",
+        },
+      });
+
+      if (!userRes.ok) {
+        throw new Error("Failed to fetch GitHub user profile");
+      }
+
+      const userData: any = await userRes.json();
+      githubSession = {
+        accessToken: tokenData.access_token,
+        user: {
+          login: userData.login,
+          name: userData.name || userData.login,
+          avatar_url: userData.avatar_url,
+          html_url: userData.html_url,
+        },
+        connectedAt: new Date().toISOString(),
+      };
+
+      res.json({
+        connected: true,
+        user: githubSession.user,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to poll GitHub Device Flow" });
+    }
   });
 
   // 2. GitHub OAuth Callback Handler (Exchanges code for token & posts message to opener)

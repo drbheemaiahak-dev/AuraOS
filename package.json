@@ -1,7 +1,9 @@
 {
-  "name": "react-example",
+  "name": "auraos-multimedia-linux",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Dr. Anil K (Kumar) Bheemaiah, Synergy Robotics",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

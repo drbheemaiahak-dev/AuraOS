@@ -13,6 +13,7 @@ import {
   LogOut,
   CheckCircle2,
   RefreshCw,
+  Smartphone,
 } from "lucide-react";
 import {
   AuraFileEntity,
@@ -55,6 +56,9 @@ export const GitHubExportModal: React.FC<GitHubExportModalProps> = ({
   const [loading, setLoading] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Auth mode: 'device' (no callback URI needed!) vs 'popup' (standard OAuth callback)
+  const [authMethod, setAuthMethod] = useState<"device" | "popup">("device");
+
   // GitHub OAuth Connector state
   const [ghStatus, setGhStatus] = useState<GitHubStatus>({
     connected: false,
@@ -65,6 +69,16 @@ export const GitHubExportModal: React.FC<GitHubExportModalProps> = ({
   });
   const [authError, setAuthError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+
+  // Device flow state
+  const [clientIdInput, setClientIdInput] = useState("");
+  const [deviceSession, setDeviceSession] = useState<{
+    device_code: string;
+    user_code: string;
+    verification_uri: string;
+    clientId: string;
+  } | null>(null);
+  const [isPollingDevice, setIsPollingDevice] = useState(false);
 
   // Push to GitHub Repository form state
   const [repoName, setRepoName] = useState("auraos-local-first-linux-wasm");
@@ -125,7 +139,71 @@ export const GitHubExportModal: React.FC<GitHubExportModalProps> = ({
     return () => window.removeEventListener("message", handleMessage);
   }, [fetchGitHubStatus]);
 
-  const handleConnectGitHub = async () => {
+  // Poll GitHub Device Flow automatically when deviceSession is active
+  useEffect(() => {
+    if (!deviceSession || ghStatus.connected) return;
+    setIsPollingDevice(true);
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch("/api/auth/github/device/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_code: deviceSession.device_code,
+            clientId: deviceSession.clientId,
+          }),
+        });
+        const data = await res.json();
+        if (data.connected) {
+          clearInterval(timer);
+          setIsPollingDevice(false);
+          setDeviceSession(null);
+          fetchGitHubStatus();
+        } else if (data.error && !data.pending) {
+          clearInterval(timer);
+          setIsPollingDevice(false);
+          setAuthError(data.error_description || data.error);
+        }
+      } catch {
+        // Keep polling
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [deviceSession, ghStatus.connected, fetchGitHubStatus]);
+
+  const handleStartDeviceFlow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setIsConnecting(true);
+    try {
+      const res = await fetch("/api/auth/github/device/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: clientIdInput }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.device_code) {
+        throw new Error(
+          data.error ||
+            "Failed to start Device Flow. Make sure 'Enable Device Flow' is checked in your GitHub OAuth App settings."
+        );
+      }
+      setDeviceSession({
+        device_code: data.device_code,
+        user_code: data.user_code,
+        verification_uri: data.verification_uri,
+        clientId: data.clientId,
+      });
+    } catch (err: any) {
+      setAuthError(err?.message || "Could not start GitHub Device Flow.");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleConnectGitHubPopup = async () => {
     setAuthError(null);
     setIsConnecting(true);
     try {
@@ -142,7 +220,6 @@ export const GitHubExportModal: React.FC<GitHubExportModalProps> = ({
         return;
       }
 
-      // Open GitHub's authorization endpoint directly in popup per oauth-integration guidelines
       const authWindow = window.open(
         data.url,
         "github_oauth_popup",
@@ -164,6 +241,7 @@ export const GitHubExportModal: React.FC<GitHubExportModalProps> = ({
   const handleDisconnectGitHub = async () => {
     await fetch("/api/github/disconnect", { method: "POST" });
     setPushResult(null);
+    setDeviceSession(null);
     fetchGitHubStatus();
   };
 
@@ -281,19 +359,60 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
         </div>
 
         <div className="p-6 space-y-6 max-h-[82vh] overflow-y-auto">
-          {/* Section 1: Popup-Based GitHub OAuth Connector */}
+          {/* Explanation of why Homepage URL & Callback URI don't open directly in a browser tab */}
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-xs text-slate-300">
+            <div className="font-semibold text-amber-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Why the Homepage URL &amp; Callback URI do not open directly in a new tab:</span>
+            </div>
+            <p className="leading-relaxed">
+              The AI Studio container URL (<code className="text-amber-300">*.run.app</code>) is strictly an{" "}
+              <strong>iframe-embedded runtime</strong>—pasting it directly into a browser address bar will not load the app outside AI Studio.
+              Those URLs are only meant to be pasted into your GitHub OAuth App form fields, <strong>or</strong> you can use{" "}
+              <strong>GitHub Device Flow below</strong> which connects via <code className="text-emerald-300">github.com/login/device</code> with zero callback URLs!
+            </p>
+          </div>
+
+          {/* Section 1: GitHub Connector */}
           <div className="p-5 bg-[#080B11] border border-slate-800 rounded-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
-                <div className="text-xs text-slate-400 font-mono">
-                  3P Popup OAuth Flow (github.com/login/oauth/authorize)
-                </div>
-                <h3 className="text-sm font-bold text-slate-100 mt-0.5">
+                <h3 className="text-sm font-bold text-slate-100">
                   1. Connect Your GitHub Account
                 </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Choose Device Code Flow (no callback URI needed) or Popup OAuth
+                </p>
               </div>
 
-              {ghStatus.connected && ghStatus.user ? (
+              {!ghStatus.connected && (
+                <div className="flex items-center p-1 bg-slate-900 border border-slate-800 rounded-lg self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMethod("device")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                      authMethod === "device"
+                        ? "bg-amber-500 text-slate-950 font-semibold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Device Code Flow (Recommended)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMethod("popup")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                      authMethod === "popup"
+                        ? "bg-amber-500 text-slate-950 font-semibold"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Popup Redirect Flow
+                  </button>
+                </div>
+              )}
+
+              {ghStatus.connected && ghStatus.user && (
                 <div className="flex items-center gap-3">
                   <div className="text-right text-xs">
                     <div className="font-semibold text-emerald-400">
@@ -310,18 +429,6 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
                     <span>Disconnect</span>
                   </button>
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleConnectGitHub}
-                  disabled={isConnecting}
-                  className="px-4 py-2.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap self-start sm:self-auto"
-                >
-                  <GitBranch className="w-4 h-4" />
-                  <span>
-                    {isConnecting ? "Waiting for GitHub Popup..." : "Connect with GitHub OAuth"}
-                  </span>
-                </button>
               )}
             </div>
 
@@ -329,13 +436,13 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
               <div className="p-3.5 bg-rose-950/40 border border-rose-800/70 rounded-lg flex items-start gap-2.5 text-xs text-rose-200">
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <div className="font-semibold">GitHub OAuth Notice</div>
+                  <div className="font-semibold">GitHub Authentication Notice</div>
                   <div>{authError}</div>
                 </div>
               </div>
             )}
 
-            {/* If Connected: Show Direct Push Form */}
+            {/* Connected View: Push Form */}
             {ghStatus.connected && ghStatus.user ? (
               <form onSubmit={handlePushToGitHub} className="space-y-4 pt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -388,7 +495,7 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
                       <>
                         <UploadCloud className="w-4 h-4" />
                         <span>
-                          Create & Push {Object.keys(sourceFiles).length} Files to GitHub
+                          Create &amp; Push {Object.keys(sourceFiles).length} Files to GitHub
                         </span>
                       </>
                     )}
@@ -416,11 +523,111 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
                   </div>
                 )}
               </form>
+            ) : authMethod === "device" ? (
+              /* Method A: GitHub Device Flow (Works on all mobile/tablet browsers without callback URLs!) */
+              <div className="space-y-4">
+                <div className="text-xs text-slate-300 space-y-1.5">
+                  <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4" />
+                    <span>Zero-Redirect GitHub Device Activation (Best for Mobile/Tablet)</span>
+                  </div>
+                  <p className="text-slate-400">
+                    1. In your GitHub OAuth App settings (<code className="text-slate-200">github.com/settings/developers</code>), check the box{" "}
+                    <strong>&quot;Enable Device Flow&quot;</strong> and click Save. (You can set Homepage URL to{" "}
+                    <code className="text-slate-200">https://github.com</code>).
+                  </p>
+                  <p className="text-slate-400">
+                    2. Paste your GitHub OAuth App <strong>Client ID</strong> below (or set{" "}
+                    <code className="text-slate-200">GITHUB_CLIENT_ID</code> in AI Studio Secrets) and click{" "}
+                    <strong>Generate 8-Digit Device Code</strong>.
+                  </p>
+                </div>
+
+                {!deviceSession ? (
+                  <form onSubmit={handleStartDeviceFlow} className="flex flex-col sm:flex-row gap-2.5">
+                    <input
+                      type="text"
+                      value={clientIdInput}
+                      onChange={(e) => setClientIdInput(e.target.value)}
+                      placeholder="Paste GitHub OAuth Client ID (e.g. Ov23li...)"
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-amber-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isConnecting}
+                      className="px-4 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    >
+                      {isConnecting ? "Requesting Code..." : "Generate 8-Digit Device Code"}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="p-4 bg-slate-900 border border-amber-500/40 rounded-xl space-y-3 text-center">
+                    <div className="text-xs text-slate-300">
+                      Copy this 8-character code and enter it at{" "}
+                      <a
+                        href={deviceSession.verification_uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-amber-400 underline font-semibold"
+                      >
+                        {deviceSession.verification_uri}
+                      </a>
+                    </div>
+                    <div className="flex items-center justify-center gap-3">
+                      <span className="text-2xl font-mono font-bold tracking-widest text-amber-300 bg-slate-950 px-4 py-2 rounded-lg border border-slate-800">
+                        {deviceSession.user_code}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(deviceSession.user_code, "user-code")}
+                        className="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-lg flex items-center gap-1.5"
+                      >
+                        {copiedKey === "user-code" ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-center gap-3 pt-1">
+                      <a
+                        href={deviceSession.verification_uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg inline-flex items-center gap-1.5"
+                      >
+                        <span>Open github.com/login/device</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                        <RefreshCw className={`w-3.5 h-3.5 ${isPollingDevice ? "animate-spin text-amber-400" : ""}`} />
+                        <span>Waiting for authorization...</span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
-              /* OAuth Callback URL Setup Instructions */
+              /* Method B: Standard OAuth Callback URL Flow */
               <div className="space-y-3 text-xs text-slate-300">
-                <div className="font-semibold text-slate-200">
-                  GitHub OAuth App Setup Instructions (github.com/settings/developers):
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-200">
+                    Copy-only OAuth App Registration Values (do not open in browser):
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConnectGitHubPopup}
+                    disabled={isConnecting}
+                    className="px-3.5 py-1.5 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg transition-colors"
+                  >
+                    {isConnecting ? "Opening Popup..." : "Launch GitHub Popup"}
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 gap-2 font-mono text-[11px]">
                   <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-between gap-2">
@@ -461,12 +668,6 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
                     </button>
                   </div>
                 </div>
-                <div className="text-slate-400 text-[11px]">
-                  Add <code className="text-slate-200">GITHUB_CLIENT_ID</code> and{" "}
-                  <code className="text-slate-200">GITHUB_CLIENT_SECRET</code> in the AI Studio{" "}
-                  <strong>Settings &gt; Secrets</strong> panel, then click{" "}
-                  <strong>Connect with GitHub OAuth</strong> above.
-                </div>
               </div>
             )}
           </div>
@@ -494,7 +695,7 @@ console.log('  git init && git add . && git commit -m "Initial commit: AuraOS ar
                 className="px-4 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Download Full Architecture & Source JSON</span>
+                <span>Download Full Architecture &amp; Source JSON</span>
               </button>
             </div>
           </div>

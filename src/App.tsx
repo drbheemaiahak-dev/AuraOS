@@ -4,23 +4,30 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Terminal, Database, Package, Cpu, Download, RotateCcw, GitBranch } from "lucide-react";
+import {
+  Terminal,
+  Database,
+  Package,
+  BookOpen,
+  RotateCcw,
+  GitBranch,
+  Film,
+} from "lucide-react";
 import {
   INITIAL_AURAFS_FILES,
   INITIAL_AURAPKG_STORE,
   AuraFileEntity,
   AuraPackageManifest,
   ShellHistoryEntry,
-  TECH_STACK_MATRIX,
-  IMPLEMENTATION_ROADMAP,
 } from "./data/auraData";
+import { AuraLandingView } from "./components/AuraLandingView";
 import { AuraShellView } from "./components/AuraShellView";
 import { AuraFsView } from "./components/AuraFsView";
 import { AuraPkgView } from "./components/AuraPkgView";
 import { AuraArchitectureView } from "./components/AuraArchitectureView";
 import { GitHubExportModal } from "./components/GitHubExportModal";
 
-type ActiveTab = "aurash" | "aurafs" | "aurapkg" | "architecture";
+type ActiveTab = "overview" | "aurash" | "aurafs" | "aurapkg" | "docs";
 
 const INITIAL_SHELL_HISTORY: ShellHistoryEntry[] = [
   {
@@ -76,7 +83,7 @@ e55a901f-62c3-411b-9e08-88f0c91e6d99 | /var/log/aurash_audit.log            | pr
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("aurash");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
   const [showExportModal, setShowExportModal] = useState(false);
 
   const [files, setFiles] = useState<AuraFileEntity[]>(() => {
@@ -170,24 +177,6 @@ export default function App() {
     );
   };
 
-  const handleExportSpecification = () => {
-    const bundle = {
-      os_distribution: "AuraOS v1.0 (Local-First Linux & WebAssembly OS)",
-      exported_at: new Date().toISOString(),
-      aurafs_sqlite_documents: files,
-      aurapkg_cas_store: packages,
-      technology_stack_matrix: TECH_STACK_MATRIX,
-      implementation_roadmap: IMPLEMENTATION_ROADMAP,
-    };
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "auraos-architecture-bundle.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const handleResetDemoState = () => {
     setFiles(INITIAL_AURAFS_FILES);
     setPackages(INITIAL_AURAPKG_STORE);
@@ -205,15 +194,26 @@ export default function App() {
           href="#top"
           onClick={(e) => {
             e.preventDefault();
-            setActiveTab("aurash");
+            setActiveTab("overview");
           }}
           className="text-lg font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
         >
           AuraOS
         </a>
 
-        {/* Zone 2: 4 concise single-line text navigation links */}
+        {/* Zone 2: 5 concise single-line text navigation links */}
         <nav className="flex items-center gap-6 text-sm font-medium text-slate-400 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab("overview")}
+            className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+              activeTab === "overview"
+                ? "text-amber-400 border-amber-400"
+                : "border-transparent hover:text-slate-100"
+            }`}
+          >
+            Overview
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab("aurash")}
@@ -249,14 +249,14 @@ export default function App() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("architecture")}
+            onClick={() => setActiveTab("docs")}
             className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
-              activeTab === "architecture"
+              activeTab === "docs"
                 ? "text-amber-400 border-amber-400"
                 : "border-transparent hover:text-slate-100"
             }`}
           >
-            System Architecture
+            Docs &amp; README
           </button>
         </nav>
 
@@ -280,9 +280,25 @@ export default function App() {
           <div className="space-y-6">
             <div>
               <div className="text-xs font-semibold text-slate-400 mb-3">
-                Core Subsystems
+                Multimedia OS Workbench
               </div>
               <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("overview")}
+                  className={`w-full px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-colors flex items-center justify-between ${
+                    activeTab === "overview"
+                      ? "bg-slate-800/90 text-amber-400"
+                      : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5 whitespace-nowrap">
+                    <Film className="w-4 h-4 shrink-0" />
+                    <span>0. Multimedia Linux Home</span>
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-500">HERO</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab("aurash")}
@@ -337,18 +353,18 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab("architecture")}
+                  onClick={() => setActiveTab("docs")}
                   className={`w-full px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-colors flex items-center justify-between ${
-                    activeTab === "architecture"
+                    activeTab === "docs"
                       ? "bg-slate-800/90 text-amber-400"
                       : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
                   }`}
                 >
                   <span className="flex items-center gap-2.5 whitespace-nowrap">
-                    <Cpu className="w-4 h-4 shrink-0" />
-                    <span>4. Aura-Web & Matrix</span>
+                    <BookOpen className="w-4 h-4 shrink-0" />
+                    <span>4. Docs &amp; README</span>
                   </span>
-                  <span className="font-mono text-[11px] text-slate-500">WASM</span>
+                  <span className="font-mono text-[11px] text-slate-500">SPEC</span>
                 </button>
               </div>
             </div>
@@ -356,11 +372,14 @@ export default function App() {
             {/* Architecture Summary Specs (Unboxed clean text) */}
             <div className="pt-5 border-t border-slate-800/80 space-y-3 text-xs">
               <div className="font-semibold text-slate-300">
-                Active Runtime Configuration
+                Active Studio Configuration
               </div>
               <div className="space-y-2 text-slate-400 font-mono text-[11px]">
                 <div>
                   <span className="text-slate-500">Kernel:</span> Linux 6.11 (runit)
+                </div>
+                <div>
+                  <span className="text-slate-500">Audio/Video:</span> PipeWire + DRM-KMS
                 </div>
                 <div>
                   <span className="text-slate-500">LLM Engine:</span> llama.cpp Q4_K_M
@@ -370,6 +389,10 @@ export default function App() {
                 </div>
                 <div>
                   <span className="text-slate-500">WASM Target:</span> CheerpX + OPFS
+                </div>
+                <div className="pt-2 border-t border-slate-800/80 text-slate-300 font-sans">
+                  <div>Dr. Anil K (Kumar) Bheemaiah</div>
+                  <div className="text-amber-400/90">Synergy Robotics · MIT License</div>
                 </div>
               </div>
             </div>
@@ -382,13 +405,20 @@ export default function App() {
               className="w-full px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset OPFS & Store State</span>
+              <span>Reset OPFS &amp; Store State</span>
             </button>
           </div>
         </aside>
 
         {/* Main Content Viewport */}
         <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+          {activeTab === "overview" && (
+            <AuraLandingView
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onOpenGitHubModal={() => setShowExportModal(true)}
+            />
+          )}
+
           {activeTab === "aurash" && (
             <AuraShellView
               files={files}
@@ -416,7 +446,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === "architecture" && (
+          {activeTab === "docs" && (
             <AuraArchitectureView files={files} packages={packages} />
           )}
         </main>

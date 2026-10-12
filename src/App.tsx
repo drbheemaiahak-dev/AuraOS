@@ -12,6 +12,7 @@ import {
   RotateCcw,
   GitBranch,
   Film,
+  ShieldAlert,
 } from "lucide-react";
 import {
   INITIAL_AURAFS_FILES,
@@ -25,9 +26,10 @@ import { AuraShellView } from "./components/AuraShellView";
 import { AuraFsView } from "./components/AuraFsView";
 import { AuraPkgView } from "./components/AuraPkgView";
 import { AuraArchitectureView } from "./components/AuraArchitectureView";
+import { AuraZeroTrustView } from "./components/AuraZeroTrustView";
 import { GitHubExportModal } from "./components/GitHubExportModal";
 
-type ActiveTab = "overview" | "aurash" | "aurafs" | "aurapkg" | "docs";
+type ActiveTab = "overview" | "aurash" | "aurafs" | "aurapkg" | "docs" | "zerotrust";
 
 const INITIAL_SHELL_HISTORY: ShellHistoryEntry[] = [
   {
@@ -183,6 +185,12 @@ export default function App() {
     setShellHistory(INITIAL_SHELL_HISTORY);
     localStorage.removeItem("auraos_opfs_files_v1");
     localStorage.removeItem("auraos_cas_packages_v1");
+  };
+
+  const handlePurgeLocalEdgeData = () => {
+    setFiles([]);
+    setPackages((prev) => prev.map((p) => ({ ...p, installed: false })));
+    setShellHistory([]);
   };
 
   return (
@@ -366,6 +374,22 @@ export default function App() {
                   </span>
                   <span className="font-mono text-[11px] text-slate-500">SPEC</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("zerotrust")}
+                  className={`w-full px-3 py-2.5 rounded-lg text-left text-xs font-medium transition-colors flex items-center justify-between ${
+                    activeTab === "zerotrust"
+                      ? "bg-rose-950/60 text-rose-400 border border-rose-800/60"
+                      : "text-rose-400/80 hover:bg-rose-950/30 hover:text-rose-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5 whitespace-nowrap">
+                    <ShieldAlert className="w-4 h-4 shrink-0" />
+                    <span>5. Level-0 Self-Erase</span>
+                  </span>
+                  <span className="font-mono text-[11px] text-rose-500">ZERO</span>
+                </button>
               </div>
             </div>
 
@@ -448,6 +472,15 @@ export default function App() {
 
           {activeTab === "docs" && (
             <AuraArchitectureView files={files} packages={packages} />
+          )}
+
+          {activeTab === "zerotrust" && (
+            <AuraZeroTrustView
+              onPurgeLocalEdgeData={handlePurgeLocalEdgeData}
+              onRestoreDemoData={handleResetDemoState}
+              filesCount={files.length}
+              installedPackagesCount={packages.filter((p) => p.installed).length}
+            />
           )}
         </main>
       </div>

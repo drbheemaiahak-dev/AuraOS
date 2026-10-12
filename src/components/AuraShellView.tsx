@@ -84,6 +84,7 @@ export const AuraShellView: React.FC<AuraShellViewProps> = ({
   aurafs query --where "<predicate>"  Structured SQLite JSON1 + FTS5 query
   aurapkg list                        List content-addressable store packages
   aurapkg verify <pkg>                Verify ed25519 signature & SHA-256 tree
+  aurash --level-0-erase              Trigger Zero-Trust Sole Authority Self-Erase
   clear                               Clear terminal buffer`,
       });
       return;

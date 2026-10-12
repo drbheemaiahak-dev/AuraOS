@@ -1,0 +1,6 @@
+{
+  "name": "AuraOS — Local-First Linux & WebAssembly OS",
+  "description": "Interactive WebAssembly browser environment and architecture workbench for AuraOS: featuring an LLM-powered natural language hybrid shell (aurash), structured SQLite/JSON file system (aurafs), content-addressable package store (aurapkg), and system blueprint.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
